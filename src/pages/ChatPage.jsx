@@ -1,58 +1,106 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Mic, Send, Bot, User, Loader2, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 import { useStats } from '../context/StatsContext';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 
 const WEBHOOK_URL = 'https://redbou.maillotvibe.com/webhook/f45d27bf-322b-4649-a835-a3ef185a83ff';
-const STORAGE_KEY = 'chat_messages';
 
 const ChatPage = () => {
-    // Message initial par défaut
-    const defaultMessage = [
-        { id: 1, text: "Hello! I'm your database assistant. How can I help you query your data today?", sender: 'bot' }
-    ];
-
-    // Charger les messages depuis localStorage au montage
-    const [messages, setMessages] = useState(() => {
-        try {
-            const savedMessages = localStorage.getItem(STORAGE_KEY);
-            if (savedMessages) {
-                const parsed = JSON.parse(savedMessages);
-                // S'assurer qu'on a au moins un message
-                return parsed.length > 0 ? parsed : defaultMessage;
-            }
-        } catch (error) {
-            console.error('Erreur lors du chargement des messages:', error);
-        }
-        return defaultMessage;
-    });
-
+    // Plus de message par défaut initial
+    const [messages, setMessages] = useState([]);
     const [inputText, setInputText] = useState('');
     const [isListening, setIsListening] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const { incrementChatUsage } = useStats();
+    const { user } = useAuth();
+    const messagesEndRef = useRef(null);
 
-    // Sauvegarder les messages dans localStorage à chaque modification
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
     useEffect(() => {
-        try {
-            // Filtrer les messages de chargement avant de sauvegarder
-            const messagesToSave = messages.filter(msg => !msg.isLoading);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(messagesToSave));
-        } catch (error) {
-            console.error('Erreur lors de la sauvegarde des messages:', error);
-        }
+        scrollToBottom();
     }, [messages]);
 
+    // Charger l'historique depuis Supabase
+    useEffect(() => {
+        if (!user) return;
+
+        const fetchMessages = async () => {
+            const { data, error } = await supabase
+                .from('chat_messages')
+                .select('*')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: true });
+
+            if (error) {
+                console.error('Erreur chargement messages:', error);
+                return;
+            }
+
+            if (data && data.length > 0) {
+                setMessages(data);
+            }
+        };
+
+        fetchMessages();
+    }, [user]);
+
+    // Fonction pour sauvegarder un message
+    const saveMessageToDb = async (text, sender) => {
+        if (!user) return null;
+
+        const { data, error } = await supabase
+            .from('chat_messages')
+            .insert([
+                { user_id: user.id, text, sender }
+            ])
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Erreur sauvegarde message:', error);
+            // On continue même si l'erreur survient pour ne pas bloquer l'UI
+            return { id: Date.now(), text, sender, created_at: new Date().toISOString() };
+        }
+
+        return data;
+    };
+
     // Fonction pour effacer l'historique
-    const handleClearHistory = () => {
-        setMessages(defaultMessage);
-        localStorage.removeItem(STORAGE_KEY);
-        toast.success('Historique effacé', {
-            description: 'Tous les messages ont été supprimés.',
-        });
+    const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+
+    // Fonction pour effacer l'historique
+    const handleClearHistory = async () => {
+        if (!isConfirmingDelete) {
+            setIsConfirmingDelete(true);
+            // Reset après 3 secondes si pas de confirmation
+            setTimeout(() => setIsConfirmingDelete(false), 3000);
+            return;
+        }
+
+        if (!user) return;
+        setIsConfirmingDelete(false); // Reset state
+
+        const { error } = await supabase
+            .from('chat_messages')
+            .delete()
+            .eq('user_id', user.id);
+
+        if (error) {
+            console.error("Erreur suppression:", error);
+            toast.error('Erreur lors de la suppression');
+            return;
+        }
+
+        setMessages([]);
+        toast.success('Historique effacé définitivement');
     };
 
     const handleSendMessage = async (e) => {
@@ -60,20 +108,22 @@ const ChatPage = () => {
         if (!inputText.trim() || isLoading) return;
 
         const messageText = inputText.trim();
-        
-        // Ajouter le message de l'utilisateur instantanément
-        const userMsg = { id: Date.now(), text: messageText, sender: 'user' };
-        setMessages(prev => [...prev, userMsg]);
-        
-        // Vider le champ de saisie
         setInputText('');
-        
-        // Afficher le message de chargement
+
+        // 1. Ajouter le message de l'utilisateur (Optimiste)
+        const tempUserMsgId = Date.now();
+        const optimisticUserMsg = { id: tempUserMsgId, text: messageText, sender: 'user', created_at: new Date().toISOString() };
+        setMessages(prev => [...prev, optimisticUserMsg]);
         setIsLoading(true);
+
+        // 2. Sauvegarder message utilisateur en DB
+        await saveMessageToDb(messageText, 'user');
+
+        // 3. Afficher indicateur chargement
         const loadingMsgId = Date.now() + 1;
         setMessages(prev => [...prev, {
             id: loadingMsgId,
-            text: "L'assistant écrit...",
+            text: "...",
             sender: 'bot',
             isLoading: true
         }]);
@@ -81,103 +131,57 @@ const ChatPage = () => {
         incrementChatUsage();
 
         try {
-            // Envoyer la requête POST au webhook et attendre la réponse complète
-            // Le système attendra la réponse du webhook avant d'afficher la réponse dans le chat
             console.log('Envoi du message au webhook:', messageText);
-            
+
             const response = await fetch(WEBHOOK_URL, {
                 method: 'POST',
                 mode: 'cors',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message: messageText }),
             });
-            
-            console.log('Statut de la réponse:', response.status, response.statusText);
 
-            // Essayer de récupérer la réponse même en cas d'erreur HTTP
             let data;
             try {
-                const responseText = await response.text();
-                if (responseText) {
-                    data = JSON.parse(responseText);
-                }
-            } catch (parseError) {
-                console.error('Erreur lors du parsing de la réponse:', parseError);
+                const text = await response.text();
+                if (text) data = JSON.parse(text);
+            } catch (e) {
+                console.error('JSON Parse error', e);
             }
 
-            // Si le webhook retourne une erreur HTTP, on essaie quand même d'utiliser la réponse
-            if (!response.ok) {
-                // Si on a réussi à parser une réponse, on l'utilise
-                if (data && (data.response || data.message || data.error)) {
-                    const responseText = data.response || data.message || data.error || `Erreur ${response.status}: ${data.message || 'Erreur serveur'}`;
-                    
-                    setMessages(prev => prev.filter(msg => msg.id !== loadingMsgId));
-                    setMessages(prev => [...prev, {
-                        id: Date.now() + 2,
-                        text: responseText,
-                        sender: 'bot'
-                    }]);
-                    return;
-                }
-                throw new Error(`Erreur HTTP: ${response.status} - ${response.statusText}`);
+            if (!response.ok && !data) {
+                throw new Error(`Erreur HTTP: ${response.status}`);
             }
 
-            // Si pas de données, créer un objet vide
-            if (!data) {
+            let responseText = '';
+            if (data) {
+                if (data.response) responseText = typeof data.response === 'string' ? data.response : JSON.stringify(data.response);
+                else if (data.message) responseText = typeof data.message === 'string' ? data.message : JSON.stringify(data.message);
+                else if (data.text) responseText = typeof data.text === 'string' ? data.text : JSON.stringify(data.text);
+                else responseText = JSON.stringify(data);
+            } else {
                 throw new Error('Aucune réponse du webhook');
             }
-            
-            // Debug : afficher la réponse complète dans la console
-            console.log('Réponse du webhook:', data);
-            
-            // Récupérer la réponse du webhook (essayer plusieurs formats possibles)
-            let responseText = '';
-            if (data.response) {
-                responseText = typeof data.response === 'string' ? data.response : JSON.stringify(data.response);
-            } else if (data.message) {
-                responseText = typeof data.message === 'string' ? data.message : JSON.stringify(data.message);
-            } else if (data.text) {
-                responseText = typeof data.text === 'string' ? data.text : JSON.stringify(data.text);
-            } else if (typeof data === 'string') {
-                responseText = data;
-            } else {
-                responseText = JSON.stringify(data);
-            }
-            
-            // Retirer le message de chargement
+
             setMessages(prev => prev.filter(msg => msg.id !== loadingMsgId));
-            
-            // Ajouter la réponse du webhook dans le chat (on attend bien la réponse avant d'afficher)
-            setMessages(prev => [...prev, {
+
+            const savedBotMsg = await saveMessageToDb(responseText, 'bot');
+
+            setMessages(prev => [...prev, savedBotMsg || {
                 id: Date.now() + 2,
                 text: responseText,
                 sender: 'bot'
             }]);
 
         } catch (error) {
-            console.error('Erreur lors de l\'envoi du message au webhook:', error);
-            
-            // Retirer le message de chargement
+            console.error('Erreur:', error);
             setMessages(prev => prev.filter(msg => msg.id !== loadingMsgId));
-            
-            // Afficher un message d'erreur dans le chat
-            let errorMessage = "Désolé, une erreur s'est produite. Veuillez réessayer.";
-            if (error.message) {
-                errorMessage = `Erreur: ${error.message}`;
-            }
-            
+            const errorMsg = `Erreur: ${error.message || "Une erreur est survenue."}`;
             setMessages(prev => [...prev, {
                 id: Date.now() + 2,
-                text: errorMessage,
+                text: errorMsg,
                 sender: 'bot'
             }]);
-
-            // Afficher une notification toast d'erreur
-            toast.error('Erreur lors de l\'envoi du message', {
-                description: error.message || 'Impossible de communiquer avec le webhook.',
-            });
+            toast.error('Erreur lors de l\'envoi du message');
         } finally {
             setIsLoading(false);
         }
@@ -186,9 +190,9 @@ const ChatPage = () => {
     const toggleMic = () => {
         setIsListening(!isListening);
         if (!isListening) {
-            toast("Microphone activated", { description: "Listening..." });
+            toast("Microphone activé");
         } else {
-            toast("Microphone deactivated");
+            toast("Microphone désactivé");
         }
     };
 
@@ -199,28 +203,39 @@ const ChatPage = () => {
                     <div className="flex-1"></div>
                     <div className="flex-1 text-center">
                         <h1 className="text-3xl font-bold bg-gradient-to-br from-white to-zinc-500 bg-clip-text text-transparent">
-                            Database Chat
+                            Messages enregistrés
                         </h1>
-                        <p className="text-zinc-400">Ask questions to your database using natural language.</p>
+                        <p className="text-zinc-400">Tout les messages sont enregistrer</p>
                     </div>
                     <div className="flex-1 flex justify-end">
                         <Button
                             onClick={handleClearHistory}
-                            variant="outline"
+                            variant={isConfirmingDelete ? "destructive" : "outline"}
                             size="sm"
-                            className="text-zinc-400 hover:text-zinc-200 border-zinc-800 hover:border-zinc-700"
+                            className={cn(
+                                "transition-all duration-200",
+                                isConfirmingDelete
+                                    ? "bg-red-500/10 text-red-500 border-red-500/50 hover:bg-red-500/20"
+                                    : "text-zinc-400 hover:text-zinc-200 border-zinc-800 hover:border-zinc-700"
+                            )}
                             title="Effacer l'historique"
                         >
                             <Trash2 size={16} className="mr-2" />
-                            Effacer l'historique
+                            {isConfirmingDelete ? "Confirmer ?" : "Effacer"}
                         </Button>
                     </div>
                 </div>
             </div>
 
-            <Card className="flex-1 flex flex-col bg-zinc-950/50 border-zinc-800 overflow-hidden">
+            <Card className="flex-1 flex flex-col bg-zinc-900/50 border-zinc-800 overflow-hidden">
                 {/* Messages Area */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    {messages.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-full text-zinc-500">
+                            <Bot size={48} className="mb-4 opacity-20" />
+                            <p>Aucun message pour le moment</p>
+                        </div>
+                    )}
                     {messages.map((msg) => (
                         <div
                             key={msg.id}
@@ -231,14 +246,14 @@ const ChatPage = () => {
                         >
                             <div className={cn(
                                 "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
-                                msg.sender === 'user' ? "bg-blue-600" : "bg-zinc-800"
+                                msg.sender === 'user' ? "bg-cyan-500" : "bg-zinc-800"
                             )}>
-                                {msg.sender === 'user' ? <User size={16} /> : (msg.isLoading ? <Loader2 size={16} className="animate-spin" /> : <Bot size={16} />)}
+                                {msg.sender === 'user' ? <User size={16} className="text-black" /> : (msg.isLoading ? <Loader2 size={16} className="animate-spin" /> : <Bot size={16} />)}
                             </div>
                             <div className={cn(
                                 "p-3 rounded-2xl text-sm leading-relaxed",
                                 msg.sender === 'user'
-                                    ? "bg-blue-600/10 text-blue-100 border border-blue-600/20 rounded-tr-none"
+                                    ? "bg-cyan-500/10 text-cyan-50 border border-cyan-500/20 rounded-tr-none"
                                     : "bg-zinc-800/50 text-zinc-100 border border-zinc-800 rounded-tl-none",
                                 msg.isLoading && "opacity-70"
                             )}>
@@ -253,6 +268,7 @@ const ChatPage = () => {
                             </div>
                         </div>
                     ))}
+                    <div ref={messagesEndRef} />
                 </div>
 
                 {/* Input Area */}
@@ -276,15 +292,15 @@ const ChatPage = () => {
                             type="text"
                             value={inputText}
                             onChange={(e) => setInputText(e.target.value)}
-                            placeholder="Type your query..."
+                            placeholder="Écrivez votre message..."
                             disabled={isLoading}
-                            className="flex-1 bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-full px-4 py-2.5 focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="flex-1 bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-full px-4 py-2.5 focus:outline-none focus:border-cyan-600 focus:ring-1 focus:ring-cyan-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         />
 
                         <Button
                             type="submit"
                             size="icon"
-                            className="rounded-full w-11 h-11 shrink-0 bg-blue-600 hover:bg-blue-500 text-white border-0"
+                            className="rounded-full w-11 h-11 shrink-0 bg-cyan-600 hover:bg-cyan-500 text-black border-0 font-bold"
                             disabled={!inputText.trim() || isLoading}
                             isLoading={isLoading}
                         >
