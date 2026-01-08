@@ -1,6 +1,6 @@
 import ActionCard from '../components/dashboard/ActionCard';
 import OrderManager from '../components/dashboard/OrderManager';
-import { Send, Link2, ShoppingBag, FileSpreadsheet } from 'lucide-react';
+import { Send, Link2, ShoppingBag, FileSpreadsheet, Power } from 'lucide-react';
 import { useStats } from '../context/StatsContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { supabase } from '../lib/supabase';
@@ -18,6 +18,7 @@ const DashboardPage = () => {
     const { user } = useAuth();
     const [chartData, setChartData] = useState([]);
     const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+    const [isShutdownModalOpen, setIsShutdownModalOpen] = useState(false);
     const [refreshTrigger, setRefreshTrigger] = useState(0); // Trigger manuel pour rafraichir le graph
     const [lastRunText, setLastRunText] = useState(""); // Texte pour "Dernier lancement"
 
@@ -114,6 +115,16 @@ const DashboardPage = () => {
         logAction(title).catch(err => console.error("Erreur log action:", err));
     };
 
+    const handleShutdownSuccess = async () => {
+        try {
+            await fetch("https://redbou.maillotvibe.com/webhook/eteindre", { mode: 'no-cors' });
+            toast.success("Ordre d'extinction envoyé ! 🌙");
+        } catch (err) {
+            toast.error("Erreur commande");
+            console.error(err);
+        }
+    };
+
     const actions = [
         {
             title: "Run telegram",
@@ -125,13 +136,15 @@ const DashboardPage = () => {
             title: "Hacoo lien",
             description: "",
             icon: Link2,
-            onClick: () => handleLinkOpen("Hacoo lien", "https://affiliate.hacoo.app/en-FR/promotion/link")
+            onClick: () => handleLinkOpen("Hacoo lien", "https://affiliate.hacoo.app/en-FR/promotion/link"),
+            className: "hidden md:flex"
         },
         {
             title: "Commandes",
             description: "",
             icon: ShoppingBag,
-            onClick: () => handleLinkOpen("Commandes", "https://affiliate.hacoo.app/en-FR/conversion/reports")
+            onClick: () => handleLinkOpen("Commandes", "https://affiliate.hacoo.app/en-FR/conversion/reports"),
+            className: "hidden md:flex"
         },
         {
             title: "Google sheet",
@@ -149,10 +162,16 @@ const DashboardPage = () => {
                 onSuccess={handleTelegramLaunch}
             />
 
+            <PinPadModal
+                isOpen={isShutdownModalOpen}
+                onClose={() => setIsShutdownModalOpen(false)}
+                onSuccess={handleShutdownSuccess}
+            />
+
             <div className="flex flex-col items-center w-full space-y-8">
                 {/* Header */}
                 <div className="max-w-5xl w-full text-center space-y-2">
-                    <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight bg-gradient-to-br from-white to-zinc-500 bg-clip-text text-transparent">
+                    <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight bg-gradient-to-br from-zinc-950 to-zinc-600 dark:from-white dark:to-zinc-500 bg-clip-text text-transparent transition-all">
                         REDBOU hacoo
                     </h1>
                 </div>
@@ -171,15 +190,16 @@ const DashboardPage = () => {
                             description={action.description}
                             icon={action.icon}
                             onClick={action.onClick}
+                            className={action.className}
                         />
                     ))}
                 </div>
 
                 {/* Analytics Chart */}
                 <div className="max-w-5xl w-full">
-                    <Card className="bg-zinc-900/50 border-zinc-700 shadow-sm">
+                    <Card className="bg-white dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors">
                         <CardHeader>
-                            <CardTitle className="text-lg font-medium text-zinc-200 flex items-center justify-between">
+                            <CardTitle className="text-lg font-medium text-zinc-900 dark:text-zinc-100 flex items-center justify-between transition-colors">
                                 <span>Activité Telegram (24h)</span>
                                 {lastRunText && (
                                     <span className="text-sm font-normal text-cyan-400 bg-cyan-500/10 px-3 py-1 rounded-full border border-cyan-500/20">
@@ -206,9 +226,9 @@ const DashboardPage = () => {
                                         content={({ active, payload, label }) => {
                                             if (active && payload && payload.length) {
                                                 return (
-                                                    <div className="bg-zinc-950/90 border border-cyan-500/50 p-3 rounded-lg shadow-xl backdrop-blur-sm">
-                                                        <p className="text-cyan-400 font-bold mb-1 text-sm">{label}</p>
-                                                        <p className="text-zinc-100 text-sm font-medium">
+                                                    <div className="bg-white/90 dark:bg-zinc-950/90 border border-cyan-500/50 p-3 rounded-lg shadow-xl backdrop-blur-sm">
+                                                        <p className="text-cyan-600 dark:text-cyan-400 font-bold mb-1 text-sm">{label}</p>
+                                                        <p className="text-zinc-900 dark:text-zinc-100 text-sm font-medium">
                                                             {payload[0].value}
                                                         </p>
                                                     </div>
@@ -223,6 +243,17 @@ const DashboardPage = () => {
                             </ResponsiveContainer>
                         </CardContent>
                     </Card>
+                </div>
+
+                {/* Shutdown Button */}
+                <div className="max-w-5xl w-full flex justify-center pb-8">
+                    <button
+                        onClick={() => setIsShutdownModalOpen(true)}
+                        className="group flex items-center gap-2 px-6 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-full font-medium backdrop-blur-sm border border-red-500/20 transition-all duration-300 active:scale-95"
+                    >
+                        <Power className="w-5 h-5" />
+                        <span>Éteindre PC</span>
+                    </button>
                 </div>
             </div>
         </>

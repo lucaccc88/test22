@@ -101,10 +101,34 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
+    const updateProfile = async ({ username, password }) => {
+        if (!isConfigured) return { success: false, error: 'Supabase non configuré' };
+
+        const updates = {};
+        if (username) updates.data = { username };
+        if (password) updates.password = password;
+
+        try {
+            const { data, error } = await supabase.auth.updateUser(updates);
+
+            if (error) {
+                return { success: false, error: error.message };
+            }
+
+            // Manually update local state if needed, though onAuthStateChange might catch it
+            if (data.user) {
+                setUser(data.user);
+            }
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error.message || 'Erreur inconnue' };
+        }
+    };
+
     const isAuthenticated = user !== null;
 
     return (
-        <AuthContext.Provider value={{ user, login, signUp, logout, isAuthenticated, isLoading }}>
+        <AuthContext.Provider value={{ user, login, signUp, logout, updateProfile, isAuthenticated, isLoading }}>
             {children}
         </AuthContext.Provider>
     );

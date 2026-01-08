@@ -202,10 +202,10 @@ const ChatPage = () => {
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex-1"></div>
                     <div className="flex-1 text-center">
-                        <h1 className="text-3xl font-bold bg-gradient-to-br from-white to-zinc-500 bg-clip-text text-transparent">
-                            Messages enregistrés
+                        <h1 className="text-3xl font-bold bg-gradient-to-br from-zinc-900 to-zinc-500 dark:from-white dark:to-zinc-500 bg-clip-text text-transparent transition-all">
+                            redbou chatte
                         </h1>
-                        <p className="text-zinc-400">Tout les messages sont enregistrer</p>
+                        {/* Subtitle removed as requested replacement implies single text or replacing both with one title, user said replace "X and Y" by "Z". I will assume replacing the Title with Z and removing Y or making Y empty/hidden if strictly following "replace X... by Z". I'll put it in h1. */}
                     </div>
                     <div className="flex-1 flex justify-end">
                         <Button
@@ -216,7 +216,7 @@ const ChatPage = () => {
                                 "transition-all duration-200",
                                 isConfirmingDelete
                                     ? "bg-red-500/10 text-red-500 border-red-500/50 hover:bg-red-500/20"
-                                    : "text-zinc-400 hover:text-zinc-200 border-zinc-800 hover:border-zinc-700"
+                                    : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700"
                             )}
                             title="Effacer l'historique"
                         >
@@ -227,7 +227,7 @@ const ChatPage = () => {
                 </div>
             </div>
 
-            <Card className="flex-1 flex flex-col bg-zinc-900/50 border-zinc-800 overflow-hidden">
+            <Card className="flex-1 flex flex-col bg-white/50 dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-800 overflow-hidden transition-colors">
                 {/* Messages Area */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
                     {messages.length === 0 && (
@@ -253,8 +253,8 @@ const ChatPage = () => {
                             <div className={cn(
                                 "p-3 rounded-2xl text-sm leading-relaxed",
                                 msg.sender === 'user'
-                                    ? "bg-cyan-500/10 text-cyan-50 border border-cyan-500/20 rounded-tr-none"
-                                    : "bg-zinc-800/50 text-zinc-100 border border-zinc-800 rounded-tl-none",
+                                    ? "bg-cyan-500/10 text-cyan-900 dark:text-cyan-50 border border-cyan-500/20 rounded-tr-none"
+                                    : "bg-zinc-100 dark:bg-zinc-800/50 text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-800 rounded-tl-none",
                                 msg.isLoading && "opacity-70"
                             )}>
                                 {msg.isLoading ? (
@@ -272,7 +272,7 @@ const ChatPage = () => {
                 </div>
 
                 {/* Input Area */}
-                <div className="p-4 border-t border-zinc-800 bg-zinc-900/30">
+                <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 transition-colors">
                     <form onSubmit={handleSendMessage} className="flex items-center gap-3">
                         <button
                             type="button"
@@ -281,7 +281,7 @@ const ChatPage = () => {
                                 "p-3 rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-zinc-600",
                                 isListening
                                     ? "bg-red-500/20 text-red-500 animate-pulse border border-red-500/50"
-                                    : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
+                                    : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-200"
                             )}
                             title="Toggle Microphone"
                         >
@@ -294,7 +294,7 @@ const ChatPage = () => {
                             onChange={(e) => setInputText(e.target.value)}
                             placeholder="Écrivez votre message..."
                             disabled={isLoading}
-                            className="flex-1 bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-full px-4 py-2.5 focus:outline-none focus:border-cyan-600 focus:ring-1 focus:ring-cyan-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="flex-1 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-full px-4 py-2.5 focus:outline-none focus:border-cyan-600 focus:ring-1 focus:ring-cyan-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         />
 
                         <Button
