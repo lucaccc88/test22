@@ -9,15 +9,19 @@ import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, ReferenceLine } fro
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import PinPadModal from '../components/ui/PinPadModal';
+import TelegramChoiceModal from '../components/ui/TelegramChoiceModal';
 
 const DashboardPage = () => {
     const WEBHOOK_URL_TELEGRAM = "https://redbou.maillotvibe.com/webhook/10483eba-0480-4afc-bfb1-26634b32a56d";
+    const WEBHOOK_URL_TELEGRAM_NEW = "https://redbou.maillotvibe.com/webhook/fddcad77-61f2-4477-bc79-986383f88055";
 
     // On garde incrementActionUsage pour les logs internes si besoin, mais on n'affiche plus les stats simples
     const { incrementActionUsage } = useStats();
     const { user } = useAuth();
     const [chartData, setChartData] = useState([]);
     const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+    const [isChoiceModalOpen, setIsChoiceModalOpen] = useState(false);
+    const [telegramLaunchMode, setTelegramLaunchMode] = useState('ALL'); // 'ALL' or 'NEW'
     const [isShutdownModalOpen, setIsShutdownModalOpen] = useState(false);
     const [refreshTrigger, setRefreshTrigger] = useState(0); // Trigger manuel pour rafraichir le graph
     const [lastRunText, setLastRunText] = useState(""); // Texte pour "Dernier lancement"
@@ -93,9 +97,16 @@ const DashboardPage = () => {
         await supabase.from('action_logs').insert([{ user_id: user.id, action_name: actionName }]);
     };
 
-    // Gestion spécial : Ouverture du Modal PIN
+    // Gestion spécial : Ouverture du Modal Choix d'abord
     const handleTelegramClick = () => {
-        setIsPinModalOpen(true);
+        setIsChoiceModalOpen(true);
+    };
+
+    const handleChoiceSelect = (mode) => {
+        setTelegramLaunchMode(mode);
+        setIsChoiceModalOpen(false);
+        // Petit délai pour la transition fluide entre les modales
+        setTimeout(() => setIsPinModalOpen(true), 200);
     };
 
     // Exécution réelle après succès du PIN
@@ -105,8 +116,10 @@ const DashboardPage = () => {
         setRefreshTrigger(prev => prev + 1); // Rafraichit le graphique et le texte
 
         // Fire and forget webhook
-        fetch(WEBHOOK_URL_TELEGRAM, { method: 'POST', mode: 'no-cors' }).catch(err => console.error(err));
-        toast.success("Lancement Telegram effectué");
+        const urlToCall = telegramLaunchMode === 'NEW' ? WEBHOOK_URL_TELEGRAM_NEW : WEBHOOK_URL_TELEGRAM;
+        fetch(urlToCall, { method: 'POST', mode: 'no-cors' }).catch(err => console.error(err));
+
+        toast.success(telegramLaunchMode === 'NEW' ? "Lancement nouveautés effectué" : "Lancement complet effectué");
     };
 
     const handleLinkOpen = (title, url) => {
@@ -160,6 +173,12 @@ const DashboardPage = () => {
                 isOpen={isPinModalOpen}
                 onClose={() => setIsPinModalOpen(false)}
                 onSuccess={handleTelegramLaunch}
+            />
+
+            <TelegramChoiceModal
+                isOpen={isChoiceModalOpen}
+                onClose={() => setIsChoiceModalOpen(false)}
+                onSelect={handleChoiceSelect}
             />
 
             <PinPadModal
