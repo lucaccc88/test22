@@ -1,5 +1,6 @@
 import ActionCard from '../components/dashboard/ActionCard';
 import OrderManager from '../components/dashboard/OrderManager';
+import ValidatedBalance from '../components/dashboard/ValidatedBalance';
 import { Send, Link2, ShoppingBag, FileSpreadsheet, Power } from 'lucide-react';
 import { useStats } from '../context/StatsContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
@@ -195,8 +196,8 @@ const DashboardPage = () => {
                     </h1>
                 </div>
 
-                {/* Orders Section (Replacing Stats) */}
                 <div className="max-w-5xl w-full">
+                    <ValidatedBalance />
                     <OrderManager />
                 </div>
 

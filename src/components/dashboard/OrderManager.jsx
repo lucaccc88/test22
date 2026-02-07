@@ -1,116 +1,90 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, ChevronDown, ChevronUp, DollarSign } from 'lucide-react';
-import { supabase } from '../../lib/supabase'; // Fixed path
-import { useAuth } from '../../context/AuthContext'; // Fixed path
-import { toast } from 'sonner';
+import { Package, XCircle, CheckCircle, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/Card';
-import { Button } from '../ui/Button';
 import { cn } from '../../lib/utils';
 
 const OrderManager = () => {
+    // This component now strictly handles Hacoo Orders
     const { user } = useAuth();
     const [orders, setOrders] = useState([]);
-    const [amount, setAmount] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isExpanded, setIsExpanded] = useState(false);
 
     const fetchOrders = async () => {
         if (!user) return;
+        setIsLoading(true);
+
         const { data, error } = await supabase
-            .from('orders')
+            .from('hacoo_orders')
             .select('*')
-            .eq('user_id', user.id)
-            .order('created_at', { ascending: false });
+            .order('order_date', { ascending: false });
 
         if (error) {
-            console.error('Error fetching orders:', error);
-            return;
+            console.error('Error fetching hacoo orders:', error);
+        } else {
+            setOrders(data || []);
         }
-        setOrders(data || []);
+        setIsLoading(false);
     };
 
     useEffect(() => {
         fetchOrders();
     }, [user]);
 
-    const handleAddOrder = async (e) => {
-        e.preventDefault();
-        if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
-            toast.error("Veuillez entrer un montant valide");
-            return;
-        }
+    // Calculation Logic: ignore canceled AND delivered from total
+    const totalAmount = orders.reduce((sum, order) => {
+        const status = order.status?.toLowerCase();
+        if (status === 'canceled' || status === 'delivered') return sum;
+        return sum + (Number(order.estimated_commission) || 0);
+    }, 0);
 
-        setIsLoading(true);
-        const { error } = await supabase
-            .from('orders')
-            .insert([{ user_id: user.id, amount: parseFloat(amount) }]);
-
-        if (error) {
-            toast.error("Erreur lors de l'ajout de la commande");
-        } else {
-            toast.success("Commande ajoutée");
-            setAmount('');
-            fetchOrders();
-        }
-        setIsLoading(false);
-    };
-
-    const handleDeleteOrder = async (orderId) => {
-        const { error } = await supabase
-            .from('orders')
-            .delete()
-            .eq('id', orderId);
-
-        if (error) {
-            toast.error("Erreur lors de la suppression");
-        } else {
-            toast.success("Commande supprimée");
-            fetchOrders();
+    // Styling Helpers
+    const getStatusIcon = (status) => {
+        switch (status?.toLowerCase()) {
+            case 'canceled': return <XCircle className="w-4 h-4 text-red-400/80" />;
+            case 'pending': return <CheckCircle className="w-4 h-4 text-green-500" />;
+            case 'delivered': return <Package className="w-4 h-4 text-white" />;
+            default: return <Package className="w-4 h-4 text-zinc-500" />;
         }
     };
 
-    const totalAmount = orders.reduce((sum, order) => sum + order.amount, 0);
+    const getStatusColor = (status) => {
+        switch (status?.toLowerCase()) {
+            case 'canceled': return 'text-red-400/80 bg-red-500/5 border-red-500/10 font-normal';
+            case 'pending': return 'text-green-400 bg-green-500/10 border-green-500/20';
+            case 'delivered': return 'text-white bg-zinc-500/10 border-zinc-500/20';
+            default: return 'text-zinc-400 bg-zinc-500/10 border-zinc-500/20';
+        }
+    };
 
     return (
-        <Card className="w-full bg-zinc-900/50 border-zinc-700 shadow-sm">
+        <Card className="w-full bg-zinc-900/50 shadow-sm border-zinc-700 mt-6">
             <CardHeader className="pb-3">
                 <CardTitle className="text-zinc-200 flex justify-between items-center">
-                    <span>Commandes</span>
-                    <span className="text-cyan-400 font-mono text-2xl font-bold">
+                    <span className="flex items-center">
+                        <Package className="w-5 h-5 text-purple-400 mr-2" />
+                        Hacoo Orders
+                    </span>
+                    <span className="font-mono text-2xl font-bold text-purple-400">
                         ${totalAmount.toFixed(2)}
                     </span>
                 </CardTitle>
             </CardHeader>
             <CardContent>
-                {/* Input Area */}
-                <form onSubmit={handleAddOrder} className="flex gap-3 mb-6">
-                    <div className="relative flex-1">
-                        <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 h-4 w-4" />
-                        <input
-                            type="number"
-                            step="0.01"
-                            value={amount}
-                            onChange={(e) => setAmount(e.target.value)}
-                            placeholder="Montant (USD)"
-                            className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-lg pl-9 pr-4 py-2 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-colors"
-                        />
-                    </div>
-                    <Button
-                        type="submit"
-                        isLoading={isLoading}
-                        className="bg-cyan-600 hover:bg-cyan-500 text-black font-semibold"
-                    >
-                        <Plus size={18} className="mr-2" />
-                        Ajouter
-                    </Button>
-                </form>
+                <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm text-zinc-400">
+                        Commission estimée
+                    </p>
+                </div>
 
                 {/* Toggle List */}
                 <button
                     onClick={() => setIsExpanded(!isExpanded)}
                     className="flex items-center justify-between w-full text-sm text-zinc-500 hover:text-zinc-300 transition-colors py-2 border-t border-zinc-800/50"
                 >
-                    <span>{orders.length} commandes enregistrées</span>
+                    <span>{orders.length} commandes synchronisées</span>
                     {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                 </button>
 
@@ -120,28 +94,43 @@ const OrderManager = () => {
                     isExpanded ? "mt-4 opacity-100" : "grid-rows-[0fr] opacity-0 mt-0"
                 )}>
                     <div className="min-h-0">
-                        {orders.length === 0 ? (
+                        {isLoading && <p className="text-center text-zinc-600 italic text-sm py-2">Chargement...</p>}
+
+                        {!isLoading && orders.length === 0 ? (
                             <p className="text-center text-zinc-600 italic text-sm py-2">Aucune commande</p>
                         ) : (
                             <div className="max-h-[300px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-                                {orders.map((order) => (
-                                    <div
-                                        key={order.id}
-                                        className="flex items-center justify-between p-3 rounded-lg bg-zinc-800/30 border border-zinc-800/50 hover:border-cyan-500/30 transition-colors group"
-                                    >
-                                        <div className="flex flex-col">
-                                            <span className="text-cyan-50 font-mono font-medium">${order.amount.toFixed(2)}</span>
-                                            <span className="text-xs text-zinc-500">{new Date(order.created_at).toLocaleDateString()}</span>
-                                        </div>
-                                        <button
-                                            onClick={() => handleDeleteOrder(order.id)}
-                                            className="p-2 rounded-full hover:bg-red-500/10 text-zinc-500 hover:text-red-500 transition-colors"
-                                            title="Supprimer"
+                                {orders.map((order) => {
+                                    const amountVal = Number(order.estimated_commission || 0);
+
+                                    return (
+                                        <div
+                                            key={order.id}
+                                            className="flex items-center justify-between p-3 rounded-lg bg-zinc-800/30 border border-zinc-800/50 hover:border-purple-500/30 transition-colors group"
                                         >
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </div>
-                                ))}
+                                            <div className="flex flex-col gap-1">
+                                                <div className="flex items-center gap-2">
+                                                    <span className={cn("text-xs px-2 py-0.5 rounded-full border flex items-center gap-1 scale-90 origin-left", getStatusColor(order.status))}>
+                                                        {getStatusIcon(order.status)}
+                                                        {order.status}
+                                                    </span>
+                                                    <span className="text-xs text-zinc-500">
+                                                        {new Date(order.order_date).toLocaleDateString()}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <span className={cn(
+                                                "font-mono font-medium",
+                                                (order.status?.toLowerCase() === 'canceled' || order.status?.toLowerCase() === 'delivered')
+                                                    ? "text-zinc-500 line-through"
+                                                    : "text-purple-50"
+                                            )}>
+                                                ${amountVal.toFixed(2)}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
